@@ -77,8 +77,3 @@ export interface ExcelPreview {
   issues: SyncIssue[];
 }
 
-
-export interface ApontamentosImportPreview {
-  apontamentos: Omit<Apontamento, '$id'>[];
-  issues: SyncIssue[];
-}

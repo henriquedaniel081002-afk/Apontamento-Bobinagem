@@ -8,10 +8,43 @@
 }
 
 @layer base {
+  * {
+    box-sizing: border-box;
+  }
+
   html, body, #root {
     @apply h-full w-full m-0 p-0 overflow-hidden;
   }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-[#0A0B10] text-slate-200 antialiased selection:bg-emerald-500/30;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+
+  @media (max-width: 767px) {
+    html,
+    body,
+    #root {
+      min-height: 100%;
+      height: auto;
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
   }
 }

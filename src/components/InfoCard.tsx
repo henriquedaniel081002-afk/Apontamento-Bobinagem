@@ -31,10 +31,10 @@ export function InfoCard({ title, icon, children, className, variant = "neutral"
 
   return (
     <div className={cn(`${bgCard} rounded-xl border ${bgBorder} p-3 relative overflow-hidden`, className)}>
-      <h3 className={`text-[10px] font-bold ${titleColor} uppercase tracking-widest mb-2 flex items-center gap-1`}>
+      <h3 className={`mb-2 flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest ${titleColor}`}>
         <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></span> {title}
       </h3>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3">
         {children}
       </div>
     </div>
@@ -43,10 +43,10 @@ export function InfoCard({ title, icon, children, className, variant = "neutral"
 
 export function InfoRow({ label, value, highlight = false, error = false, colSpan = 1 }: { label: string; value: ReactNode; highlight?: boolean; error?: boolean; colSpan?: number }) {
   return (
-    <div className={colSpan === 2 ? "col-span-2" : ""}>
-      <p className="text-[10px] text-slate-500 uppercase">{label}</p>
+    <div className={cn("min-w-0", colSpan === 2 ? "col-span-2" : "")}>
+      <p className="text-[10px] uppercase text-slate-500">{label}</p>
       <p className={cn(
-        "text-sm font-bold",
+        "break-words text-[13px] font-bold leading-tight sm:text-sm",
         highlight ? "text-blue-400 font-mono" : "text-white",
         error ? "text-rose-400" : ""
       )}>
@@ -59,7 +59,7 @@ export function InfoRow({ label, value, highlight = false, error = false, colSpa
 export function InfoAlert({ children, variant = "warning" }: { children: ReactNode; variant?: "warning" | "error" }) {
   const bg = variant === "warning" ? "bg-amber-500/10 border-amber-500/20 text-amber-200/80" : "bg-rose-500/10 border-rose-500/20 text-rose-200/80";
   return (
-    <div className={cn("col-span-2 p-2 rounded border", bg)}>
+    <div className={cn("col-span-2 rounded border p-2", bg)}>
       <p className="text-[10px] leading-tight italic">{children}</p>
     </div>
   );

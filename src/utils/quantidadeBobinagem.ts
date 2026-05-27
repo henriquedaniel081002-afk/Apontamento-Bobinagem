@@ -7,7 +7,7 @@ export const normalizarLinhaBobinagem = (linha?: string | null) =>
 
 export const obterFatorConversaoBobinagem = (linha?: string | null) => {
   const linhaNormalizada = normalizarLinhaBobinagem(linha);
-  if (linhaNormalizada === 'MON') return 2;
+  if (linhaNormalizada === 'MON' || linhaNormalizada === 'BIF') return 2;
   if (linhaNormalizada === 'TRI') return 3;
   return 1;
 };

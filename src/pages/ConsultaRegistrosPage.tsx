@@ -66,7 +66,7 @@ const getTipoEnrolamento = (a: Apontamento) =>
   );
 
 const campoFiltro =
-  "w-full rounded-xl border border-slate-700 bg-[#0A0B10] px-3 py-3 text-sm font-bold text-white outline-none transition focus:border-emerald-500";
+  "w-full rounded-xl border border-slate-700 bg-[#0A0B10] px-3 py-2.5 text-sm font-bold text-white outline-none transition focus:border-emerald-500 sm:py-3";
 
 type RegistroEditavel = {
   data_apontamento: string;
@@ -76,6 +76,7 @@ type RegistroEditavel = {
   maquina: string;
   setor_maquina: string;
   tipo_apontamento: "PRODUCAO" | "REFORMA";
+  tipo_enrolamento: string;
   op: string;
   desenho: string;
   desenho_manual: string;
@@ -84,6 +85,8 @@ type RegistroEditavel = {
   linha: string;
   linha_manual: string;
   qtd_produzida: string;
+  qtd_apontada: string;
+  qtd_saldo: string;
   obs: string;
 };
 
@@ -102,6 +105,7 @@ const montarRegistroEditavel = (registro: Apontamento): RegistroEditavel => ({
   maquina: registro.maquina || "",
   setor_maquina: registro.setor_maquina || "",
   tipo_apontamento: registro.tipo_apontamento || "PRODUCAO",
+  tipo_enrolamento: registro.tipo_enrolamento || derivarTipoEnrolamentoPorMaquina(registro.maquina) || "",
   op: registro.op || "",
   desenho: registro.desenho || "",
   desenho_manual: registro.desenho_manual || "",
@@ -109,7 +113,9 @@ const montarRegistroEditavel = (registro: Apontamento): RegistroEditavel => ({
   potencia_manual: registro.potencia_manual || "",
   linha: registro.linha || "",
   linha_manual: registro.linha_manual || "",
-  qtd_produzida: String(registro.qtd_produzida ?? ""),
+  qtd_produzida: String(getQuantidadeContabilizadaBobinagem(registro) ?? ""),
+  qtd_apontada: String(getQuantidadeFisicaApontadaBobinagem(registro) ?? ""),
+  qtd_saldo: String(getSaldoPendenteBobinagem(registro) ?? ""),
   obs: limparMarcadoresSaldoBobinagem(registro.obs),
 });
 
@@ -121,7 +127,7 @@ function FiltroInput({
   children: ReactNode;
 }) {
   return (
-    <label className="space-y-2">
+    <label className="space-y-1.5 sm:space-y-2">
       <span className="block text-[10px] font-black uppercase tracking-widest text-slate-500">
         {label}
       </span>
@@ -142,6 +148,7 @@ export function ConsultaRegistrosPage() {
   const [maquinaFiltro, setMaquinaFiltro] = useState("");
   const [turnoFiltro, setTurnoFiltro] = useState("");
   const [desenhoFiltro, setDesenhoFiltro] = useState("");
+  const [opFiltro, setOpFiltro] = useState("");
   const [linhaFiltro, setLinhaFiltro] = useState("");
   const [tipoFiltro, setTipoFiltro] = useState("");
   const [filtrosAbertos, setFiltrosAbertos] = useState(false);
@@ -214,6 +221,7 @@ export function ConsultaRegistrosPage() {
       const nome = a.nome_operador || funcionario?.nome || "";
       const turno = a.turno || funcionario?.turno || "";
       const desenho = getDesenho(a);
+      const op = a.op || "";
       const linha = getLinha(a);
       const setor = getSetor(a);
 
@@ -229,6 +237,7 @@ export function ConsultaRegistrosPage() {
         !normalizar(desenho).includes(normalizar(desenhoFiltro))
       )
         return false;
+      if (opFiltro && !normalizar(op).includes(normalizar(opFiltro))) return false;
       if (linhaFiltro && linha !== linhaFiltro) return false;
       if (tipoFiltro && a.tipo_apontamento !== tipoFiltro) return false;
       return true;
@@ -241,6 +250,7 @@ export function ConsultaRegistrosPage() {
     funcionariosPorMatricula,
     linhaFiltro,
     maquinaFiltro,
+    opFiltro,
     nomeFiltro,
     setorFiltro,
     tipoFiltro,
@@ -339,6 +349,8 @@ export function ConsultaRegistrosPage() {
     if (!registroEditando?.$id || !formEdicao) return;
 
     const qtd = Number(formEdicao.qtd_produzida);
+    const qtdApontada = Number(formEdicao.qtd_apontada);
+    const qtdSaldo = Number(formEdicao.qtd_saldo);
     if (!formEdicao.data_apontamento) {
       setError("Informe a data do apontamento antes de salvar.");
       return;
@@ -351,19 +363,32 @@ export function ConsultaRegistrosPage() {
       setError("Informe a máquina antes de salvar.");
       return;
     }
-    if (!Number.isFinite(qtd) || qtd <= 0) {
-      setError("A quantidade produzida deve ser maior que zero.");
+    if (!Number.isFinite(qtd) || qtd < 0) {
+      setError("A quantidade produzida deve ser zero ou maior.");
+      return;
+    }
+    if (!Number.isFinite(qtdApontada) || qtdApontada < 0) {
+      setError("A quantidade apontada deve ser zero ou maior.");
+      return;
+    }
+    if (!Number.isFinite(qtdSaldo) || qtdSaldo < 0) {
+      setError("A quantidade de saldo deve ser zero ou maior.");
       return;
     }
 
+    const linhaEditada = formEdicao.tipo_apontamento === "REFORMA"
+      ? formEdicao.linha_manual || formEdicao.linha
+      : formEdicao.linha;
     const saldoTecnico = extrairSaldoBobinagem(registroEditando.obs);
-    const obsEditada = saldoTecnico
+    const fatorSaldo = saldoTecnico?.fator || (linhaEditada.trim().toUpperCase() === "MON" ? 2 : linhaEditada.trim().toUpperCase() === "TRI" ? 3 : 1);
+    const deveSalvarSaldoTecnico = formEdicao.tipo_apontamento === "PRODUCAO" && fatorSaldo > 1;
+    const obsEditada = deveSalvarSaldoTecnico
       ? adicionarMarcadorSaldoBobinagem(
           formEdicao.obs,
-          saldoTecnico.fator,
-          saldoTecnico.saldo,
-          saldoTecnico.qtdContabilizada ?? undefined,
-          saldoTecnico.qtdApontada ?? undefined,
+          fatorSaldo,
+          qtdSaldo,
+          qtd,
+          qtdApontada,
         )
       : limparMarcadoresSaldoBobinagem(formEdicao.obs);
 
@@ -380,6 +405,7 @@ export function ConsultaRegistrosPage() {
         maquina: formEdicao.maquina.trim(),
         setor_maquina: formEdicao.setor_maquina.trim(),
         tipo_apontamento: formEdicao.tipo_apontamento,
+        tipo_enrolamento: formEdicao.tipo_enrolamento,
         op: formEdicao.op.trim(),
         desenho: formEdicao.desenho.trim(),
         desenho_manual: formEdicao.desenho_manual.trim(),
@@ -417,6 +443,7 @@ export function ConsultaRegistrosPage() {
     setMaquinaFiltro("");
     setTurnoFiltro("");
     setDesenhoFiltro("");
+    setOpFiltro("");
     setLinhaFiltro("");
     setTipoFiltro("");
   };
@@ -488,24 +515,24 @@ export function ConsultaRegistrosPage() {
   };
 
   return (
-    <div className="flex h-full w-full flex-col gap-5 overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between gap-4">
+    <div className="flex min-h-0 w-full flex-col gap-3 overflow-visible sm:h-full sm:gap-5 sm:overflow-hidden">
+      <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div>
-          <h2 className="flex items-center gap-2 text-lg font-black uppercase tracking-wide text-white">
+          <h2 className="flex items-center gap-2 text-base font-black uppercase tracking-wide text-white sm:text-lg">
             <ClipboardList className="h-5 w-5 text-emerald-400" />
             Consulta de Registros
           </h2>
-          <p className="mt-1 text-sm font-semibold text-slate-500">
+          <p className="mt-1 text-xs font-semibold text-slate-500 sm:text-sm">
             Consulta os apontamentos salvos no Appwrite e exporta Excel filtrado
             por data, máquina e demais filtros operacionais.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
           <button
             type="button"
             onClick={() => setFiltrosAbertos((atual) => !atual)}
             className={cn(
-              "flex items-center gap-2 rounded-xl border px-4 py-3 text-xs font-black uppercase tracking-widest transition",
+              "flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-[11px] font-black uppercase tracking-widest transition sm:px-4 sm:py-3 sm:text-xs",
               filtrosAbertos
                 ? "border-emerald-500 bg-emerald-500/10 text-emerald-400"
                 : "border-slate-700 bg-[#151921] text-slate-300 hover:border-emerald-500 hover:text-emerald-400",
@@ -518,7 +545,7 @@ export function ConsultaRegistrosPage() {
             type="button"
             onClick={exportarExcel}
             disabled={loading || registrosFiltrados.length === 0}
-            className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-xs font-black uppercase tracking-widest text-[#0A0B10] shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-3 py-2.5 text-[11px] font-black uppercase tracking-widest text-[#0A0B10] shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40 sm:px-4 sm:py-3 sm:text-xs"
           >
             <FileSpreadsheet className="h-4 w-4" />
             Exportar Excel
@@ -527,7 +554,7 @@ export function ConsultaRegistrosPage() {
             type="button"
             onClick={apagarTodosRegistros}
             disabled={loading || apagandoTodos || apontamentos.length === 0}
-            className="flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-rose-300 transition hover:border-rose-400 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center justify-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-[11px] font-black uppercase tracking-widest text-rose-300 transition hover:border-rose-400 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40 sm:px-4 sm:py-3 sm:text-xs"
           >
             <Trash2 className="h-4 w-4" />
             {apagandoTodos ? "Apagando..." : "Apagar todos"}
@@ -536,7 +563,7 @@ export function ConsultaRegistrosPage() {
             type="button"
             onClick={carregarDados}
             disabled={loading || apagandoTodos}
-            className="flex items-center gap-2 rounded-xl border border-slate-700 bg-[#151921] px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-300 transition hover:border-emerald-500 hover:text-emerald-400 disabled:opacity-50"
+            className="flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-[#151921] px-3 py-2.5 text-[11px] font-black uppercase tracking-widest text-slate-300 transition hover:border-emerald-500 hover:text-emerald-400 disabled:opacity-50 sm:px-4 sm:py-3 sm:text-xs"
           >
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             Atualizar
@@ -545,20 +572,20 @@ export function ConsultaRegistrosPage() {
       </div>
 
       {error && (
-        <div className="flex shrink-0 items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-sm font-bold text-rose-400">
+        <div className="flex shrink-0 items-start gap-2 rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-xs font-bold text-rose-400 sm:items-center sm:gap-3 sm:p-4 sm:text-sm">
           <AlertCircle className="h-5 w-5" />
           {error}
         </div>
       )}
 
       {filtrosAbertos && (
-        <div className="shrink-0 rounded-2xl border border-slate-800 bg-[#151921] p-4 shadow-2xl">
-          <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="shrink-0 rounded-2xl border border-slate-800 bg-[#151921] p-3 shadow-2xl sm:p-4">
+          <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400">
               <Filter className="h-4 w-4 text-emerald-400" />
               Filtros
             </h3>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center justify-between gap-3 sm:gap-4">
               <span className="text-xs font-black uppercase tracking-widest text-slate-500">
                 {registrosFiltrados.length} registro(s)
               </span>
@@ -571,7 +598,7 @@ export function ConsultaRegistrosPage() {
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-2 sm:gap-3 md:grid-cols-2 xl:grid-cols-4">
             <FiltroInput label="Data inicial">
               <input
                 type="date"
@@ -649,6 +676,14 @@ export function ConsultaRegistrosPage() {
                 className={campoFiltro}
               />
             </FiltroInput>
+            <FiltroInput label="OP">
+              <input
+                value={opFiltro}
+                onChange={(e) => setOpFiltro(e.target.value)}
+                placeholder="Buscar OP"
+                className={campoFiltro}
+              />
+            </FiltroInput>
             <FiltroInput label="Linha">
               <select
                 value={linhaFiltro}
@@ -678,37 +713,37 @@ export function ConsultaRegistrosPage() {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-[#151921] shadow-2xl">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-          <h3 className="text-sm font-black uppercase tracking-widest text-slate-300">
+      <div className="min-h-[55vh] flex-1 overflow-hidden rounded-2xl border border-slate-800 bg-[#151921] shadow-2xl sm:min-h-0">
+        <div className="flex flex-col gap-1 border-b border-slate-800 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4 sm:py-3">
+          <h3 className="text-xs font-black uppercase tracking-widest text-slate-300 sm:text-sm">
             Registros detalhados
           </h3>
           <span className="text-xs font-black uppercase tracking-widest text-slate-500">
             {registrosFiltrados.length} registro(s)
           </span>
         </div>
-        <div className="h-full overflow-auto pb-14">
-          <table className="w-full min-w-[2050px] border-collapse text-left">
+        <div className="h-full overflow-auto pb-12 sm:pb-14">
+          <table className="w-full min-w-[1750px] border-collapse text-left">
             <thead className="sticky top-0 z-10 bg-[#10141B]">
-              <tr className="text-[11px] font-black uppercase tracking-widest text-slate-500">
-                <th className="px-4 py-4">Data</th>
-                <th className="px-4 py-4">Matrícula</th>
-                <th className="px-4 py-4">Colaborador</th>
-                <th className="px-4 py-4">Turno</th>
-                <th className="px-4 py-4">Máquina</th>
-                <th className="px-4 py-4">Setor</th>
-                <th className="px-4 py-4">Tipo apontamento</th>
-                <th className="px-4 py-4">OP</th>
-                <th className="px-4 py-4">Desenho</th>
-                <th className="px-4 py-4">Potência</th>
-                <th className="px-4 py-4">Linha</th>
-                <th className="px-4 py-4">AT/BT</th>
-                <th className="px-4 py-4 text-right">Qtde apontada</th>
-                <th className="px-4 py-4 text-right">Qtde produzida</th>
-                <th className="px-4 py-4 text-right">Saldo</th>
-                <th className="px-4 py-4 text-right">Tempo produzido</th>
-                <th className="px-4 py-4">Obs</th>
-                <th className="sticky right-0 bg-[#10141B] px-4 py-4 text-center">
+              <tr className="text-[10px] font-black uppercase tracking-widest text-slate-500 sm:text-[11px]">
+                <th className="px-3 py-3 sm:px-4 sm:py-4">Data</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">Matrícula</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">Colaborador</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">Turno</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">Máquina</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">Setor</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">Tipo apontamento</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">OP</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">Desenho</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">Potência</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">Linha</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">AT/BT</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4 text-right">Qtde apontada</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4 text-right">Qtde produzida</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4 text-right">Saldo</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4 text-right">Tempo produzido</th>
+                <th className="px-3 py-3 sm:px-4 sm:py-4">Obs</th>
+                <th className="sticky right-0 bg-[#10141B] px-3 py-3 sm:px-4 sm:py-4 text-center">
                   Ações
                 </th>
               </tr>
@@ -740,46 +775,46 @@ export function ConsultaRegistrosPage() {
                       key={
                         a.$id || `${a.data_apontamento}-${a.matricula}-${a.op}`
                       }
-                      className="whitespace-nowrap text-sm font-semibold text-slate-300 transition hover:bg-slate-800/40"
+                      className="whitespace-nowrap text-xs font-semibold text-slate-300 transition hover:bg-slate-800/40 sm:text-sm"
                     >
-                      <td className="px-4 py-4 font-mono text-slate-400">
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 font-mono text-slate-400">
                         {formatarData(a.data_apontamento)}
                       </td>
-                      <td className="px-4 py-4 font-mono text-white">
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 font-mono text-white">
                         {a.matricula}
                       </td>
-                      <td className="px-4 py-4 text-white">
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 text-white">
                         {a.nome_operador || funcionario?.nome || "-"}
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="px-3 py-3 sm:px-4 sm:py-4">
                         {a.turno || funcionario?.turno || "-"}
                       </td>
-                      <td className="px-4 py-4 font-mono">
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 font-mono">
                         {a.maquina || "-"}
                       </td>
-                      <td className="px-4 py-4">{getSetor(a)}</td>
-                      <td className="px-4 py-4">
+                      <td className="px-3 py-3 sm:px-4 sm:py-4">{getSetor(a)}</td>
+                      <td className="px-3 py-3 sm:px-4 sm:py-4">
                         <span className="rounded-lg bg-slate-800 px-2 py-1 text-xs font-black text-slate-300">
                           {getTipoApontamento(a)}
                         </span>
                       </td>
-                      <td className="px-4 py-4 font-mono">{a.op || "-"}</td>
-                      <td className="px-4 py-4 font-mono">{getDesenho(a)}</td>
-                      <td className="px-4 py-4 font-mono">{getPotencia(a)}</td>
-                      <td className="px-4 py-4">{getLinha(a)}</td>
-                      <td className="px-4 py-4 font-mono">
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 font-mono">{a.op || "-"}</td>
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 font-mono">{getDesenho(a)}</td>
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 font-mono">{getPotencia(a)}</td>
+                      <td className="px-3 py-3 sm:px-4 sm:py-4">{getLinha(a)}</td>
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 font-mono">
                         {getTipoEnrolamento(a)}
                       </td>
-                      <td className="px-4 py-4 text-right font-mono text-white">
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 text-right font-mono text-white">
                         {getQuantidadeFisicaApontadaBobinagem(a)}
                       </td>
-                      <td className="px-4 py-4 text-right font-mono text-white">
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 text-right font-mono text-white">
                         {getQuantidadeContabilizadaBobinagem(a)}
                       </td>
-                      <td className="px-4 py-4 text-right font-mono text-amber-300">
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 text-right font-mono text-amber-300">
                         {getSaldoPendenteBobinagem(a)}
                       </td>
-                      <td className="px-4 py-4 text-right font-mono text-white">
+                      <td className="px-3 py-3 sm:px-4 sm:py-4 text-right font-mono text-white">
                         {calcularTempoProduzido(a).toLocaleString("pt-BR", {
                           minimumFractionDigits: 1,
                           maximumFractionDigits: 1,
@@ -787,17 +822,17 @@ export function ConsultaRegistrosPage() {
                         min
                       </td>
                       <td
-                        className="max-w-[260px] truncate px-4 py-4"
+                        className="max-w-[260px] truncate px-3 py-3 sm:px-4 sm:py-4"
                         title={limparMarcadoresSaldoBobinagem(a.obs) || "-"}
                       >
                         {limparMarcadoresSaldoBobinagem(a.obs) || "-"}
                       </td>
-                      <td className="sticky right-0 bg-[#151921] px-4 py-4 text-center shadow-[-12px_0_18px_rgba(0,0,0,0.25)]">
+                      <td className="sticky right-0 bg-[#151921] px-3 py-3 sm:px-4 sm:py-4 text-center shadow-[-12px_0_18px_rgba(0,0,0,0.25)]">
                         <div className="flex items-center justify-center gap-2">
                           <button
                             type="button"
                             onClick={() => abrirEdicao(a)}
-                            className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-black uppercase tracking-widest text-emerald-300 transition hover:border-emerald-400 hover:bg-emerald-500/20"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-2 text-[11px] font-black uppercase tracking-widest text-emerald-300 transition hover:border-emerald-400 hover:bg-emerald-500/20 sm:gap-2 sm:px-3 sm:text-xs"
                             title="Editar registro"
                           >
                             <Edit3 className="h-4 w-4" />
@@ -807,7 +842,7 @@ export function ConsultaRegistrosPage() {
                             type="button"
                             onClick={() => excluirRegistro(a)}
                             disabled={excluindoId === a.$id}
-                            className="inline-flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-black uppercase tracking-widest text-rose-300 transition hover:border-rose-400 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-[11px] font-black uppercase tracking-widest text-rose-300 transition hover:border-rose-400 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:px-3 sm:text-xs"
                             title="Excluir registro"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -825,14 +860,14 @@ export function ConsultaRegistrosPage() {
       </div>
 
       {registroEditando && formEdicao && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-5xl rounded-2xl border border-slate-700 bg-[#151921] shadow-2xl">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-2 backdrop-blur-sm sm:p-4">
+          <div className="max-h-[94vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-700 bg-[#151921] shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-800 px-3 py-3 sm:items-center sm:px-5 sm:py-4">
               <div>
-                <h3 className="text-sm font-black uppercase tracking-widest text-white">
+                <h3 className="text-xs font-black uppercase tracking-widest text-white sm:text-sm">
                   Editar registro
                 </h3>
-                <p className="mt-1 text-xs font-bold text-slate-500">
+                <p className="mt-1 text-[11px] font-bold text-slate-500 sm:text-xs">
                   Altere os dados do apontamento e salve diretamente no
                   Appwrite.
                 </p>
@@ -846,8 +881,8 @@ export function ConsultaRegistrosPage() {
               </button>
             </div>
 
-            <div className="max-h-[70vh] overflow-auto p-5">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="max-h-[calc(94vh-136px)] overflow-auto p-3 sm:p-5">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <FiltroInput label="Data">
                   <input
                     type="date"
@@ -915,6 +950,19 @@ export function ConsultaRegistrosPage() {
                     <option value="REFORMA">Reforma sem OP</option>
                   </select>
                 </FiltroInput>
+                <FiltroInput label="Tipo enrolamento">
+                  <select
+                    value={formEdicao.tipo_enrolamento}
+                    onChange={(e) =>
+                      atualizarCampoEdicao("tipo_enrolamento", e.target.value)
+                    }
+                    className={campoFiltro}
+                  >
+                    <option value="">Automático pela máquina</option>
+                    <option value="AT">Enrolamento AT</option>
+                    <option value="BT">Enrolamento BT</option>
+                  </select>
+                </FiltroInput>
                 <FiltroInput label="OP">
                   <input
                     value={formEdicao.op}
@@ -958,7 +1006,15 @@ export function ConsultaRegistrosPage() {
                     className={campoFiltro}
                   />
                 </FiltroInput>
-                <FiltroInput label="Linha">
+                <FiltroInput label="OP">
+              <input
+                value={opFiltro}
+                onChange={(e) => setOpFiltro(e.target.value)}
+                placeholder="Buscar OP"
+                className={campoFiltro}
+              />
+            </FiltroInput>
+            <FiltroInput label="Linha">
                   <input
                     value={formEdicao.linha}
                     onChange={(e) =>
@@ -979,10 +1035,32 @@ export function ConsultaRegistrosPage() {
                 <FiltroInput label="Qtde produzida">
                   <input
                     type="number"
-                    min="1"
+                    min="0"
                     value={formEdicao.qtd_produzida}
                     onChange={(e) =>
                       atualizarCampoEdicao("qtd_produzida", e.target.value)
+                    }
+                    className={campoFiltro}
+                  />
+                </FiltroInput>
+                <FiltroInput label="Qtde apontada">
+                  <input
+                    type="number"
+                    min="0"
+                    value={formEdicao.qtd_apontada}
+                    onChange={(e) =>
+                      atualizarCampoEdicao("qtd_apontada", e.target.value)
+                    }
+                    className={campoFiltro}
+                  />
+                </FiltroInput>
+                <FiltroInput label="Qtde saldo">
+                  <input
+                    type="number"
+                    min="0"
+                    value={formEdicao.qtd_saldo}
+                    onChange={(e) =>
+                      atualizarCampoEdicao("qtd_saldo", e.target.value)
                     }
                     className={campoFiltro}
                   />
@@ -999,11 +1077,11 @@ export function ConsultaRegistrosPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 border-t border-slate-800 px-5 py-4">
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-800 px-3 py-3 sm:flex-row sm:items-center sm:justify-end sm:gap-3 sm:px-5 sm:py-4">
               <button
                 type="button"
                 onClick={fecharEdicao}
-                className="rounded-xl border border-slate-700 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-300 transition hover:border-slate-500 hover:text-white"
+                className="w-full rounded-xl border border-slate-700 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-300 transition hover:border-slate-500 hover:text-white sm:w-auto"
               >
                 Cancelar
               </button>
@@ -1011,7 +1089,7 @@ export function ConsultaRegistrosPage() {
                 type="button"
                 onClick={salvarEdicao}
                 disabled={salvandoEdicao}
-                className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-xs font-black uppercase tracking-widest text-[#0A0B10] shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-xs font-black uppercase tracking-widest text-[#0A0B10] shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               >
                 <Save className="h-4 w-4" />
                 {salvandoEdicao ? "Salvando..." : "Salvar edição"}

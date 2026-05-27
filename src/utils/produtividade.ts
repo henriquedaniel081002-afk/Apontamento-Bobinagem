@@ -68,8 +68,9 @@ export const buscarTempoPadrao = (potencia?: string | number | null, linha?: str
   const linhaNormalizada = normalizarLinha(linha);
   const tipoNormalizado = normalizarTipo(tipo);
 
+  const linhaBusca = linhaNormalizada === 'BIF' ? 'MON' : linhaNormalizada;
   const tempo = TEMPOS_PADRAO.find(
-    (item) => item.potencia === potenciaNormalizada && item.linha === linhaNormalizada
+    (item) => item.potencia === potenciaNormalizada && item.linha === linhaBusca
   );
 
   if (!tempo) return null;
@@ -78,11 +79,21 @@ export const buscarTempoPadrao = (potencia?: string | number | null, linha?: str
   return null;
 };
 
+export const calcularTempoProduzidoPorQuantidade = (
+  apontamento: Pick<Apontamento, 'tipo_apontamento' | 'potencia' | 'potencia_manual' | 'linha' | 'linha_manual' | 'tipo_enrolamento' | 'maquina'>,
+  quantidadeApontada: number,
+) => {
+  const dados = getDadosTecnicosApontamento(apontamento as Apontamento);
+  const minutosPorUnidade = buscarTempoPadrao(dados.potencia, dados.linha, dados.tipoEnrolamento);
+  if (minutosPorUnidade === null) return 0;
+  return quantidadeApontada * minutosPorUnidade;
+};
+
 export const calcularTempoProduzido = (apontamento: Apontamento) => {
-  const dados = getDadosTecnicosApontamento(apontamento);
-  const minutosPorPeca = buscarTempoPadrao(dados.potencia, dados.linha, dados.tipoEnrolamento);
-  if (minutosPorPeca === null) return 0;
-  return getQuantidadeFisicaApontadaBobinagem(apontamento) * minutosPorPeca;
+  return calcularTempoProduzidoPorQuantidade(
+    apontamento,
+    getQuantidadeFisicaApontadaBobinagem(apontamento),
+  );
 };
 
 export const formatarNumero = (valor: number, casas = 1) => {

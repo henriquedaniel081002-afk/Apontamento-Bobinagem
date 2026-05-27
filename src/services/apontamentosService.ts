@@ -79,6 +79,7 @@ export const criarApontamentoComRegraBobinagem = async (
     const quantidadeContabilizadaPendente = getQuantidadeContabilizadaBobinagem(pendente);
     const quantidadeApontadaOriginalPendente = getQuantidadeFisicaApontadaBobinagem(pendente);
     const novaQuantidadeContabilizadaPendente = quantidadeContabilizadaPendente + (fechouUnidade ? 1 : 0);
+    const novaQuantidadeApontadaPendente = quantidadeApontadaOriginalPendente + usadoParaCompletar;
 
     await atualizarApontamento(pendente.$id, {
       qtd_produzida: Math.max(1, novaQuantidadeContabilizadaPendente),
@@ -87,13 +88,23 @@ export const criarApontamentoComRegraBobinagem = async (
         fator,
         fechouUnidade ? 0 : saldoAtualizado,
         novaQuantidadeContabilizadaPendente,
-        quantidadeApontadaOriginalPendente,
+        novaQuantidadeApontadaPendente,
       ),
     });
 
     restanteApontado -= usadoParaCompletar;
   }
 
+  if (restanteApontado <= 0) {
+    const apontamentoConsolidado = await listarApontamentos();
+    const ultimoRegistroDaOp = apontamentoConsolidado.find((registro) =>
+      registro.tipo_apontamento === 'PRODUCAO' &&
+      normalizarOP(registro.op) === opAtual &&
+      getLinhaApontamentoBobinagem(registro) === linha
+    );
+
+    if (ultimoRegistroDaOp) return ultimoRegistroDaOp;
+  }
 
   const quantidadeContabilizada = Math.floor(restanteApontado / fator);
   const saldoPendente = restanteApontado % fator;
@@ -107,7 +118,7 @@ export const criarApontamentoComRegraBobinagem = async (
       fator,
       saldoPendente,
       quantidadeContabilizada,
-      quantidadeApontada,
+      restanteApontado,
     ),
   });
 };

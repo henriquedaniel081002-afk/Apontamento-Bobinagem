@@ -16,14 +16,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="h-full w-full bg-[#0A0B10] text-slate-200 font-sans flex flex-col overflow-hidden">
-      <header className="h-16 bg-[#151921] border-b border-slate-800 flex items-center justify-between px-8 shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-emerald-500 rounded flex items-center justify-center text-[#0A0B10] font-bold text-xl">
+    <div className="min-h-screen w-full bg-[#0A0B10] text-slate-200 font-sans flex flex-col overflow-hidden sm:h-screen">
+      <header className="shrink-0 bg-[#151921] border-b border-slate-800 flex items-center justify-between gap-3 px-3 py-2 sm:h-16 sm:px-8">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-emerald-500 text-lg font-bold text-[#0A0B10] sm:h-10 sm:w-10 sm:text-xl">
             IT
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-white uppercase">ITAM <span className="text-emerald-500">- APONTAMENTO BOBINAGEM</span></h1>
+            <h1 className="truncate text-[13px] font-bold leading-tight tracking-tight text-white uppercase sm:text-xl">ITAM <span className="text-emerald-500">- APONTAMENTO BOBINAGEM</span></h1>
           </div>
         </div>
         <div className="hidden sm:flex items-center gap-6">
@@ -34,7 +34,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="flex-1 flex p-6 gap-6 overflow-hidden max-w-[1400px] w-full mx-auto">
+      <main className="mx-auto flex min-h-0 w-full max-w-[1400px] flex-1 gap-3 overflow-y-auto p-3 sm:overflow-hidden sm:p-4 lg:gap-6 lg:p-6">
         {children}
       </main>
     </div>
